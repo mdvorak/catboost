@@ -10,6 +10,7 @@ namespace NKernelHost {
     private:
         TCudaBufferPtr<const TCBinFeature> BinaryFeatures;
         TCudaBufferPtr<const float> FeatureWeights;
+        TCudaBufferPtr<const ui8> FeatureMask;
         TCudaBufferPtr<const float> Histograms;
         TCudaBufferPtr<const double> PartStats;
         TCudaBufferPtr<const ui32> PartIds;
@@ -29,6 +30,7 @@ namespace NKernelHost {
 
         TComputeOptimalSplitsKernel(TCudaBufferPtr<const TCBinFeature> binaryFeatures,
                                     TCudaBufferPtr<const float> featureWeights,
+                                    TCudaBufferPtr<const ui8> featureMask,
                                     TCudaBufferPtr<const float> histograms,
                                     TCudaBufferPtr<const double> partStats,
                                     TCudaBufferPtr<const ui32> partIds,
@@ -44,6 +46,7 @@ namespace NKernelHost {
                                     ui64 seed)
             : BinaryFeatures(binaryFeatures)
             , FeatureWeights(featureWeights)
+            , FeatureMask(featureMask)
             , Histograms(histograms)
             , PartStats(partStats)
             , PartIds(partIds)
@@ -60,7 +63,7 @@ namespace NKernelHost {
         {
         }
 
-        Y_SAVELOAD_DEFINE(BinaryFeatures, FeatureWeights, Histograms, PartStats, PartIds, RestPartIds, NumScoreBlocks, Result, ArgmaxBlockCount,
+        Y_SAVELOAD_DEFINE(BinaryFeatures, FeatureWeights, FeatureMask, Histograms, PartStats, PartIds, RestPartIds, NumScoreBlocks, Result, ArgmaxBlockCount,
                           ScoreFunction, L2, Normalize, ScoreStdDev, Seed, MultiClassOptimization);
 
         void Run(const TCudaStream& stream) const {
@@ -68,7 +71,7 @@ namespace NKernelHost {
             const ui32 partBlockSize = PartIds.Size() / NumScoreBlocks;
             CB_ENSURE(partBlockSize, PartIds.Size() << " " << NumScoreBlocks);
 
-            NKernel::ComputeOptimalSplits(BinaryFeatures.Get(), BinaryFeatures.Size(), FeatureWeights.Get(), FeatureWeights.Size(), Histograms.Get(),
+            NKernel::ComputeOptimalSplits(BinaryFeatures.Get(), BinaryFeatures.Size(), FeatureWeights.Get(), FeatureWeights.Size(), FeatureMask.Get(), Histograms.Get(),
                                           PartStats.Get(), PartStats.ObjectSize(), PartIds.Get(), partBlockSize,
                                           NumScoreBlocks, RestPartIds.Get(), RestPartIds.Size(), Result.Get(), ArgmaxBlockCount, ScoreFunction, MultiClassOptimization, L2, Normalize,
                                           ScoreStdDev, Seed, stream.GetStream());
@@ -79,6 +82,7 @@ namespace NKernelHost {
     private:
         TCudaBufferPtr<const TCBinFeature> BinaryFeatures;
         TCudaBufferPtr<const float> FeatureWeights;
+        TCudaBufferPtr<const ui8> FeatureMask;
         TCudaBufferPtr<const float> Histograms;
         TCudaBufferPtr<const double> PartStats;
         TCudaBufferPtr<const ui32> PartIds;
@@ -96,6 +100,7 @@ namespace NKernelHost {
 
         TComputeOptimalSplitsLeafwiseKernel(TCudaBufferPtr<const TCBinFeature> binaryFeatures,
                                             TCudaBufferPtr<const float> featureWeights,
+                                            TCudaBufferPtr<const ui8> featureMask,
                                             TCudaBufferPtr<const float> histograms,
                                             TCudaBufferPtr<const double> partStats,
                                             TCudaBufferPtr<const ui32> partIds,
@@ -109,6 +114,7 @@ namespace NKernelHost {
                                             ui64 seed)
             : BinaryFeatures(binaryFeatures)
             , FeatureWeights(featureWeights)
+            , FeatureMask(featureMask)
             , Histograms(histograms)
             , PartStats(partStats)
             , PartIds(partIds)
@@ -123,12 +129,12 @@ namespace NKernelHost {
         {
         }
 
-        Y_SAVELOAD_DEFINE(BinaryFeatures, FeatureWeights, Histograms, PartStats, PartIds, Result, ArgmaxBlockCount,
+        Y_SAVELOAD_DEFINE(BinaryFeatures, FeatureWeights, FeatureMask, Histograms, PartStats, PartIds, Result, ArgmaxBlockCount,
                           ScoreFunction, L2, Normalize, ScoreStdDev, Seed, MultiClassOptimization);
 
         void Run(const TCudaStream& stream) const {
             NKernel::ComputeOptimalSplitsRegion(BinaryFeatures.Get(), BinaryFeatures.Size(),
-                                                FeatureWeights.Get(), FeatureWeights.Size(),
+                                                FeatureWeights.Get(), FeatureWeights.Size(), FeatureMask.Get(),
                                                 Histograms.Get(),
                                                 PartStats.Get(), PartStats.ObjectSize(), PartIds.Get(), PartIds.Size(),
                                                 Result.Get(), ArgmaxBlockCount, ScoreFunction, MultiClassOptimization, L2, Normalize,
@@ -140,6 +146,7 @@ namespace NKernelHost {
     private:
         TCudaBufferPtr<const TCBinFeature> BinaryFeatures;
         TCudaBufferPtr<const float> FeatureWeights;
+        TCudaBufferPtr<const ui8> FeatureMask;
         TCudaBufferPtr<const float> Histograms;
         TCudaBufferPtr<const double> PartStats;
         ui32 FirstPartId;
@@ -158,6 +165,7 @@ namespace NKernelHost {
 
         TComputeOptimalSplitLeafwiseKernel(TCudaBufferPtr<const TCBinFeature> binaryFeatures,
                                            TCudaBufferPtr<const float> featureWeights,
+                                           TCudaBufferPtr<const ui8> featureMask,
                                            TCudaBufferPtr<const float> histograms,
                                            TCudaBufferPtr<const double> partStats,
                                            ui32 firstPartId,
@@ -172,6 +180,7 @@ namespace NKernelHost {
                                            ui64 seed)
             : BinaryFeatures(binaryFeatures)
             , FeatureWeights(featureWeights)
+            , FeatureMask(featureMask)
             , Histograms(histograms)
             , PartStats(partStats)
             , FirstPartId(firstPartId)
@@ -187,12 +196,12 @@ namespace NKernelHost {
         {
         }
 
-        Y_SAVELOAD_DEFINE(BinaryFeatures, FeatureWeights, Histograms, PartStats, FirstPartId, MaybeSecondPartId, Result, ArgmaxBlockCount,
+        Y_SAVELOAD_DEFINE(BinaryFeatures, FeatureWeights, FeatureMask, Histograms, PartStats, FirstPartId, MaybeSecondPartId, Result, ArgmaxBlockCount,
                           ScoreFunction, L2, Normalize, ScoreStdDev, Seed, MultiClassOptimization);
 
         void Run(const TCudaStream& stream) const {
             NKernel::ComputeOptimalSplit(BinaryFeatures.Get(), BinaryFeatures.Size(),
-                                         FeatureWeights.Get(), FeatureWeights.Size(),
+                                         FeatureWeights.Get(), FeatureWeights.Size(), FeatureMask.Get(),
                                          Histograms.Get(),
                                          PartStats.Get(), PartStats.ObjectSize(), FirstPartId, MaybeSecondPartId,
                                          Result.Get(), ArgmaxBlockCount, ScoreFunction, MultiClassOptimization, L2, Normalize,
@@ -352,7 +361,7 @@ namespace NCatboostCuda {
                 if (leaf.BestSplit.Defined() && leaf.BestSplit.Score < 0) {
                     leavesToSplit->push_back(leafToSplitId);
                 }
-            } else {
+            } else if (!subsets.Leaves[0].IsTerminal) {
                 leavesToSplit->push_back(0);
             }
         } else {
@@ -433,6 +442,18 @@ namespace NCatboostCuda {
                 CB_ENSURE(false, "should be implemented");
             }
         }
+        const TMirrorBuffer<ui8>* featureMask = nullptr;
+        if (FeatureSampler) {
+            if (!FeatureSampler->NextLevel(Random)) {
+                // as on CPU, leaves without sampled split candidates are not split
+                for (ui32 leafId : leavesToVisit) {
+                    subsets->Leaves[leafId].IsTerminal = true;
+                }
+                return;
+            }
+            featureMask = FeatureSampler->GetFeatureMask();
+        }
+
         const ui32 binFeatureCountPerDevice = static_cast<const ui32>(NHelpers::CeilDivide(subsets->BinFeatures.GetObjectsSlice().Size(),
                                                                                            NCudaLib::GetCudaManager().GetDeviceCount()));
 
@@ -454,6 +475,7 @@ namespace NCatboostCuda {
                                    0,
                                    subsets->BinFeatures,
                                    subsets->FeatureWeights,
+                                   featureMask,
                                    subsets->Histograms,
                                    reducedStats,
                                    leafIds,
@@ -476,6 +498,7 @@ namespace NCatboostCuda {
                                    0,
                                    subsets->BinFeatures,
                                    subsets->FeatureWeights,
+                                   featureMask,
                                    subsets->Histograms,
                                    reducedStats,
                                    leafIds,
@@ -496,6 +519,7 @@ namespace NCatboostCuda {
                                    0,
                                    subsets->BinFeatures,
                                    subsets->FeatureWeights,
+                                   featureMask,
                                    subsets->Histograms,
                                    reducedStats,
                                    leavesToVisit[0],

@@ -634,9 +634,7 @@ void NCatboostOptions::TCatBoostOptions::Validate() const {
 
     ESamplingUnit samplingUnit = ObliviousTreeOptions->BootstrapConfig->GetSamplingUnit();
     if (GetTaskType() == ETaskType::GPU) {
-        if (!IsPairwiseScoring(lossFunction)) {
-            CB_ENSURE(ObliviousTreeOptions->Rsm.IsDefault(), "Error: rsm on GPU is supported for pairwise modes only");
-        } else {
+        if (IsPairwiseScoring(lossFunction)) {
             if (!ObliviousTreeOptions->Rsm.IsDefault()) {
                 CATBOOST_WARNING_LOG << "RSM on GPU will work only for non-binary features. Plus current implementation will sample by groups, so this could slightly affect quality in positive or negative way" << Endl;
             }

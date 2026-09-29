@@ -217,7 +217,8 @@ namespace NCatboostCuda {
                                                    double scoreBeforeSplit,
                                                    const TComputeHistogramsHelper<TLayoutPolicy>& histCalcer,
                                                    double scoreStdDev = 0,
-                                                   ui64 seed = 0) {
+                                                   ui64 seed = 0,
+                                                   const TCudaBuffer<ui8, TFeatureWeightsMapping>* featureMask = nullptr) {
 
             CB_ENSURE(histCalcer.GetGroupingPolicy() == Policy);
             auto& profiler = NCudaLib::GetProfiler();
@@ -227,6 +228,7 @@ namespace NCatboostCuda {
                 FindOptimalSplit(DataSet->GetBinFeaturesForBestSplits(Policy),
                                  catFeatureWeights,
                                  featureWeights,
+                                 featureMask,
                                  histograms,
                                  partStats,
                                  FoldCount,
@@ -317,7 +319,8 @@ namespace NCatboostCuda {
                                                    double scoreBeforeSplit,
                                                    TComputeHistogramsHelper<TDocParallelLayout>& histHelper,
                                                    double scoreStdDev = 0,
-                                                   ui64 seed = 0);
+                                                   ui64 seed = 0,
+                                                   const TMirrorBuffer<ui8>* featureMask = nullptr);
 
         TBestSplitProperties ReadOptimalSplit() {
             if (DataSet->GetGridSize(Policy)) {
@@ -392,14 +395,16 @@ namespace NCatboostCuda {
                                           const TMirrorBuffer<const float>& featureWeights,
                                           double scoreBeforeSplit,
                                           double scoreStdDev = 0,
-                                          ui64 seed = 0) {
+                                          ui64 seed = 0,
+                                          const TCudaBuffer<ui8, TFeatureWeightsMapping>* featureMask = nullptr) {
             FindBestSplitsHelper.ComputeOptimalSplit(partStats,
                                                      catFeatureWeights,
                                                      featureWeights,
                                                      scoreBeforeSplit,
                                                      ComputeHistogramsHelper,
                                                      scoreStdDev,
-                                                     seed);
+                                                     seed,
+                                                     featureMask);
             return *this;
         }
 

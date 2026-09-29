@@ -372,6 +372,105 @@ def test_rsm_with_pairwise(boosting_type):
     fit_catboost_gpu(params)
 
 
+RSM_TRAINING_MODES = {
+    'symmetric_feature_parallel_ordered': {'--boosting-type': 'Ordered'},
+    'symmetric_feature_parallel_plain': {'--boosting-type': 'Plain', '--data-partition': 'FeatureParallel'},
+    'symmetric_doc_parallel': {'--boosting-type': 'Plain', '--data-partition': 'DocParallel'},
+    'depthwise': {'--boosting-type': 'Plain', '--grow-policy': 'Depthwise'},
+    'lossguide': {'--boosting-type': 'Plain', '--grow-policy': 'Lossguide'},
+    'region': {'--boosting-type': 'Plain', '--grow-policy': 'Region'},
+    'multiclass_symmetric': {'--boosting-type': 'Plain', '--loss-function': 'MultiClass'},
+}
+
+
+def fit_and_apply_rsm_model(name, rsm, training_mode):
+    extra_params = dict(RSM_TRAINING_MODES[training_mode])
+    dataset = 'cloudness_small' if extra_params.get('--loss-function') == 'MultiClass' else 'adult'
+    output_model_path = yatest.common.test_output_path(name + '.bin')
+    output_fit_eval_path = yatest.common.test_output_path(name + '.fit.eval')
+    output_eval_path = yatest.common.test_output_path(name + '.eval')
+    params = {
+        '--use-best-model': 'false',
+        '--loss-function': 'Logloss',
+        '-f': data_file(dataset, 'train_small'),
+        '-t': data_file(dataset, 'test_small'),
+        '--column-description': data_file(dataset, 'train.cd'),
+        '-i': '20',
+        '-w': '0.1',
+        '-T': '4',
+        '--random-seed': '0',
+        '--rsm': rsm,
+        '-m': output_model_path,
+        '--eval-file': output_fit_eval_path,
+    }
+    params.update(extra_params)
+    fit_catboost_gpu(params)
+    apply_catboost(output_model_path, data_file(dataset, 'test_small'), data_file(dataset, 'train.cd'), output_eval_path)
+    return output_model_path, output_fit_eval_path, output_eval_path
+
+
+def read_raw_formula_val(eval_path):
+    with open(eval_path) as eval_file:
+        header = eval_file.readline().rstrip('\n').split('\t')
+        columns = [i for i, name in enumerate(header) if name.startswith('RawFormulaVal')]
+        return np.array([[float(row.rstrip('\n').split('\t')[i]) for i in columns] for row in eval_file])
+
+
+@pytest.mark.parametrize('training_mode', sorted(RSM_TRAINING_MODES.keys()))
+def test_rsm(training_mode):
+    _, _, sampled_eval = fit_and_apply_rsm_model('sampled', 0.3, training_mode)
+    _, _, sampled_again_eval = fit_and_apply_rsm_model('sampled_again', 0.3, training_mode)
+    _, _, full_eval = fit_and_apply_rsm_model('full', 1, training_mode)
+
+    assert filecmp.cmp(sampled_eval, sampled_again_eval, shallow=False)
+    assert not filecmp.cmp(sampled_eval, full_eval, shallow=False)
+
+
+@pytest.mark.parametrize('training_mode', sorted(RSM_TRAINING_MODES.keys()))
+def test_rsm_tiny(training_mode):
+    model_path, fit_eval_path, eval_path = fit_and_apply_rsm_model('model', 0.02, training_mode)
+
+    if RSM_TRAINING_MODES[training_mode].get('--loss-function') != 'MultiClass':
+        # adult has few features, so most levels have none sampled and trees end before their first split
+        model = catboost.CatBoost()
+        model.load_model(model_path)
+        assert min(model.get_tree_leaf_counts()) == 1
+    # test predictions accumulated during training must match the saved model
+    assert np.allclose(read_raw_formula_val(fit_eval_path), read_raw_formula_val(eval_path), rtol=0, atol=1e-5)
+
+
+@pytest.mark.parametrize(
+    'grow_policy,loss_function',
+    [('SymmetricTree', 'MultiRMSE'), ('Region', 'RMSE')],
+    ids=['symmetric_multirmse', 'region_rmse']
+)
+def test_rsm_keeps_overflow_error(grow_policy, loss_function):
+    # scores of all splits overflow, which fails the training without rsm and must fail it with rsm too
+    prng = np.random.RandomState(seed=0)
+    features = prng.random_sample((2000, 10))
+    target = np.where(features[:, 0] > 0.5, 1e30, -1e30) * (1 + features[:, 1])
+    targets = [target, -target] if loss_function == 'MultiRMSE' else [target]
+
+    train_path = yatest.common.test_output_path('train')
+    cd_path = yatest.common.test_output_path('train.cd')
+    np.savetxt(train_path, np.column_stack(targets + [features]), fmt='%.9g', delimiter='\t')
+    np.savetxt(cd_path, [[i, 'Label'] for i in range(len(targets))], fmt='%s', delimiter='\t')
+
+    params = {
+        '--loss-function': loss_function,
+        '-f': train_path,
+        '--column-description': cd_path,
+        '--boosting-type': 'Plain',
+        '--grow-policy': grow_policy,
+        '-i': '5',
+        '-T': '4',
+        '--rsm': '0.5',
+        '-m': yatest.common.test_output_path('model.bin'),
+    }
+    with pytest.raises(yatest.common.ExecutionError):
+        fit_catboost_gpu(params)
+
+
 def combine_dicts(first, *vargs):
     combined = first.copy()
     for rest in vargs:

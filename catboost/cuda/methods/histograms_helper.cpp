@@ -24,7 +24,8 @@ namespace NCatboostCuda {
         const TMirrorBuffer<const float>& catFeatureWeights,
         const TMirrorBuffer<const float>& featureWeights,
         double scoreBeforeSplit,
-        TComputeHistogramsHelper<TDocParallelLayout>& histHelper, double scoreStdDev, ui64 seed) {
+        TComputeHistogramsHelper<TDocParallelLayout>& histHelper, double scoreStdDev, ui64 seed,
+        const TMirrorBuffer<ui8>* featureMask) {
 
         CB_ENSURE(histHelper.GetGroupingPolicy() == Policy);
         auto& profiler = NCudaLib::GetProfiler();
@@ -41,6 +42,7 @@ namespace NCatboostCuda {
                 FindOptimalSplit(binFeatures,
                                  catFeatureWeights,
                                  featureWeights,
+                                 featureMask,
                                  histogram,
                                  reducedStats,
                                  FoldCount,
@@ -74,6 +76,7 @@ namespace NCatboostCuda {
                 FindOptimalSplit(binFeatures,
                                  catFeatureWeights,
                                  featureWeights,
+                                 featureMask,
                                  ReducedHistograms,
                                  reducedStats,
                                  FoldCount,

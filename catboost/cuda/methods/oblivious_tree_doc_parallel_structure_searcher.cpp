@@ -3,6 +3,7 @@
 #include "helpers.h"
 #include "pointwise_scores_calcer.h"
 #include "random_score_helper.h"
+#include "rsm_helper.h"
 #include "update_feature_weights.h"
 
 #include <catboost/cuda/cuda_lib/cuda_buffer_helpers/all_reduce.h>
@@ -60,6 +61,8 @@ namespace NCatboostCuda {
         featureWeights.Write(featureWeightsCpu);
         double scoreBeforeSplit = 0.0;
 
+        const auto featureSampler = CreateRsmFeatureSampler(FeaturesManager, TreeConfig.Rsm.Get(), dataSet);
+
         for (ui32 depth = 0; depth < TreeConfig.MaxDepth; ++depth) {
             {
                 auto guard = profiler.Profile("Gather observation indices");
@@ -72,6 +75,17 @@ namespace NCatboostCuda {
             //                manager.WaitComplete();
 
             UpdateFeatureWeightsForBestSplits(FeaturesManager, TreeConfig.ModelSizeReg, catFeatureWeights);
+
+            const bool hasSampledCandidates = !featureSampler || featureSampler->NextLevel(random);
+            const TMirrorBuffer<ui8>* featureMask = featureSampler ? featureSampler->GetFeatureMask() : nullptr;
+            if (!hasSampledCandidates) {
+                // as on CPU, a level without sampled split candidates ends the tree
+                TVector<TPartitionStatistics> partitionsStats;
+                reducedPartStats.Read(partitionsStats);
+                leaves = EstimateLeaves(partitionsStats);
+                weights = ExtractWeights(partitionsStats);
+                break;
+            }
 
             TBinarySplit bestSplit;
             {
@@ -93,7 +107,8 @@ namespace NCatboostCuda {
                                                                  featureWeights.AsConstBuf(),
                                                                  scoreBeforeSplit,
                                                                  scoreStdDevMult,
-                                                                 random.NextUniformL());
+                                                                 random.NextUniformL(),
+                                                                 featureMask);
                     }
                     if (simpleCtrScoreCalcer) {
                         simpleCtrScoreCalcer->ComputeOptimalSplit(reducedPartStats.AsConstBuf(),
@@ -101,7 +116,8 @@ namespace NCatboostCuda {
                                                                   featureWeights.AsConstBuf(),
                                                                   scoreBeforeSplit,
                                                                   scoreStdDevMult,
-                                                                  random.NextUniformL());
+                                                                  random.NextUniformL(),
+                                                                  featureMask);
                     }
                 }
             }

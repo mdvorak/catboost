@@ -39,6 +39,7 @@ namespace NCatboostCuda {
         }
 
         options.RandomStrength = config.RandomStrength;
+        options.Rsm = config.Rsm;
         return options;
     }
 
