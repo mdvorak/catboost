@@ -132,6 +132,56 @@ namespace NKernelHost {
         }
     };
 
+    class TFocalTargetKernel: public TStatelessKernel {
+    private:
+        TCudaBufferPtr<const float> Targets;
+        TCudaBufferPtr<const float> Weights;
+        TCudaBufferPtr<const float> Predictions;
+        float Alpha;
+        float Gamma;
+        TCudaBufferPtr<float> FunctionValue;
+        TCudaBufferPtr<float> Der;
+        TCudaBufferPtr<float> Der2;
+
+    public:
+        TFocalTargetKernel() = default;
+
+        TFocalTargetKernel(TCudaBufferPtr<const float> targets,
+                           TCudaBufferPtr<const float> weights,
+                           TCudaBufferPtr<const float> predictions,
+                           float alpha,
+                           float gamma,
+                           TCudaBufferPtr<float> functionValue,
+                           TCudaBufferPtr<float> der,
+                           TCudaBufferPtr<float> der2)
+            : Targets(targets)
+            , Weights(weights)
+            , Predictions(predictions)
+            , Alpha(alpha)
+            , Gamma(gamma)
+            , FunctionValue(functionValue)
+            , Der(der)
+            , Der2(der2)
+        {
+        }
+
+        Y_SAVELOAD_DEFINE(Targets, Weights, Predictions, FunctionValue, Der, Der2, Alpha, Gamma);
+
+        void Run(const TCudaStream& stream) const {
+            if (FunctionValue.Size()) {
+                NKernel::FillBuffer(FunctionValue.Get(), 0.0f, 1, stream.GetStream());
+            }
+            if (Predictions.Size() == 0) {
+                return;
+            }
+            NKernel::FocalTargetKernel(Targets.Get(), Weights.Get(), static_cast<ui32>(Targets.Size()),
+                                       Alpha, Gamma,
+                                       Predictions.Get(),
+                                       FunctionValue.Get(), Der.Get(), Der2.Get(),
+                                       stream.GetStream());
+        }
+    };
+
     class TQueryRmseKernel: public TKernelBase<NKernel::TQueryRmseContext, false> {
     private:
         TCudaBufferPtr<const ui32> QuerySizes;
@@ -848,6 +898,20 @@ inline void ApproximatePointwise(const TCudaBuffer<const float, TMapping>& targe
                                  ui32 stream = 0) {
     using TKernel = NKernelHost::TPointwiseTargetImplKernel;
     LaunchKernels<TKernel>(target.NonEmptyDevices(), stream, target, weights, point, alpha, lossFunction, score, weightedDer, weightedDer2);
+}
+
+template <class TMapping>
+inline void ApproximateFocal(const TCudaBuffer<const float, TMapping>& target,
+                             const TCudaBuffer<const float, TMapping>& weights,
+                             const TCudaBuffer<const float, TMapping>& point,
+                             float alpha,
+                             float gamma,
+                             TCudaBuffer<float, TMapping>* score,
+                             TCudaBuffer<float, TMapping>* weightedDer,
+                             TCudaBuffer<float, TMapping>* weightedDer2,
+                             ui32 stream = 0) {
+    using TKernel = NKernelHost::TFocalTargetKernel;
+    LaunchKernels<TKernel>(target.NonEmptyDevices(), stream, target, weights, point, alpha, gamma, score, weightedDer, weightedDer2);
 }
 
 template <class TMapping>

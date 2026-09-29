@@ -449,6 +449,7 @@ MakeRegister(LossInfos,
     ),
     Registree(Focal,
         EMetricAttribute::IsBinaryClassCompatible
+        | EMetricAttribute::HasGpuImplementation
     )
 )
 

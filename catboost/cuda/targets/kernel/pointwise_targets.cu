@@ -94,6 +94,50 @@ namespace NKernel {
         }
     };
 
+    struct TFocalTarget  {
+        // CPU clamps the predicted probability to [1e-13, 1 - 1e-13]. The same clamp is applied
+        // here to the margin, log((1 - 1e-13) / 1e-13), so that 1 - pt keeps its precision in float.
+        static constexpr float MaxMargin = 29.933606f;
+
+        float Alpha;
+        float Gamma;
+
+        struct TValue {
+            float Score;
+            float Der;
+            float Der2;
+        };
+
+        __host__ __device__ __forceinline__ TFocalTarget(float alpha, float gamma)
+                : Alpha(alpha)
+                , Gamma(gamma) {
+        }
+
+        // Der equals TFocalError::CalcDer and Der2 equals -TFocalError::CalcDer2, with
+        // (1 - pt)^(gamma - 1) factored out of the latter to keep it finite for gamma < 1.
+        __device__ __forceinline__ TValue Eval(float target, float prediction) const {
+            const bool isPositive = target == 1;
+            const float margin = min(max(isPositive ? prediction : -prediction, -MaxMargin), MaxMargin);
+            const float expNegMargin = expf(-margin);
+
+            const float at = isPositive ? Alpha : 1.0f - Alpha;
+            const float y = 2.0f * target - 1.0f;
+            const float pt = 1.0f / (1.0f + expNegMargin);
+            const float oneMinusPt = expNegMargin * pt;
+            const float logPt = -log1pf(expNegMargin);
+            const float oneMinusPtPowGamma = powf(oneMinusPt, Gamma);
+
+            const float v = Gamma * pt * logPt - oneMinusPt;
+            const float dv = Gamma * logPt + Gamma + 1.0f;
+
+            TValue value;
+            value.Score = -at * oneMinusPtPowGamma * logPt;
+            value.Der = -at * y * oneMinusPtPowGamma * v;
+            value.Der2 = at * y * y * oneMinusPtPowGamma * pt * (oneMinusPt * dv - Gamma * v);
+            return value;
+        }
+    };
+
     struct TExpectileTarget  {
         float Alpha;
 
@@ -521,5 +565,50 @@ namespace NKernel {
                 Y_ABORT_UNLESS(false, "Unknown target");
             }
         }
+    }
+
+    template <int BLOCK_SIZE>
+    __global__ void FocalTargetImpl(const float* targets, const float* weights, ui32 size,
+                                    const float* predictions,
+                                    TFocalTarget focal,
+                                    float* functionValue,
+                                    float* der,
+                                    float* der2) {
+        const ui32 i = blockIdx.x * blockDim.x + threadIdx.x;
+
+        __shared__ float tmpScores[BLOCK_SIZE];
+
+        float score = 0;
+        if (i < size) {
+            const float weight = weights ? weights[i] : 1.0f;
+            const TFocalTarget::TValue value = focal.Eval(targets[i], predictions[i]);
+            if (der) {
+                der[i] = weight * value.Der;
+            }
+            if (der2) {
+                der2[i] = weight * value.Der2;
+            }
+            score = -weight * value.Score;
+        }
+
+        if (functionValue) {
+            tmpScores[threadIdx.x] = score;
+            __syncthreads();
+
+            const float blockScore = FastInBlockReduce<float>(threadIdx.x, tmpScores, BLOCK_SIZE);
+            if (threadIdx.x == 0) {
+                atomicAdd(functionValue, blockScore);
+            }
+        }
+    }
+
+    void FocalTargetKernel(const float* targets, const float* weights, ui32 size,
+                           float alpha, float gamma,
+                           const float* predictions,
+                           float* functionValue, float* der, float* der2,
+                           TCudaStream stream) {
+        const ui32 blockSize = 1024;
+        const ui32 numBlocks = CeilDivide<ui32>(size, blockSize);
+        FocalTargetImpl<blockSize><<<numBlocks, blockSize, 0, stream>>>(targets, weights, size, predictions, TFocalTarget(alpha, gamma), functionValue, der, der2);
     }
 }

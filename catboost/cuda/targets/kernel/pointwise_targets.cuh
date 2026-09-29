@@ -23,4 +23,10 @@ namespace NKernel {
                                const float* predictions,
                                float* functionValue, float* der, float* der2,
                                TCudaStream stream);
+
+    void FocalTargetKernel(const float* targets, const float* weights, ui32 size,
+                           float alpha, float gamma,
+                           const float* predictions,
+                           float* functionValue, float* der, float* der2,
+                           TCudaStream stream);
 }

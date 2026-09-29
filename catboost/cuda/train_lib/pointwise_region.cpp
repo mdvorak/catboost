@@ -16,4 +16,5 @@ namespace NCatboostCuda {
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorExpectile(GetTrainerFactoryKeyForRegion(ELossFunction::Expectile));
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorTweedie(GetTrainerFactoryKeyForRegion(ELossFunction::Tweedie));
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorHuber(GetTrainerFactoryKeyForRegion(ELossFunction::Huber));
+    TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorFocal(GetTrainerFactoryKeyForRegion(ELossFunction::Focal));
 }

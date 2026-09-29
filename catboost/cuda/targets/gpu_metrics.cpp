@@ -203,6 +203,20 @@ namespace NCatboostCuda {
                     const double sum = ReadReduce(tmp)[0];
                     return MakeSimpleAdditiveStatistic(-sum, totalWeight);
                 }
+                case ELossFunction::Focal: {
+                    auto tmp = TVec::Create(prediction0.GetMapping().RepeatOnAllDevices(1));
+                    ApproximateFocal(target,
+                                     weights,
+                                     prediction0,
+                                     NCatboostOptions::GetFocalParamA(params),
+                                     NCatboostOptions::GetFocalParamG(params),
+                                     &tmp,
+                                     (TVec*)nullptr,
+                                     (TVec*)nullptr);
+
+                    const double sum = ReadReduce(tmp)[0];
+                    return MakeSimpleAdditiveStatistic(-sum, totalWeight);
+                }
                 case ELossFunction::RMSE: {
                     auto tmp = TVec::CopyMapping(prediction0);
                     tmp.Copy(prediction0);
@@ -612,7 +626,8 @@ namespace NCatboostCuda {
             case ELossFunction::Poisson:
             case ELossFunction::Expectile:
             case ELossFunction::Tweedie:
-            case ELossFunction::Huber: {
+            case ELossFunction::Huber:
+            case ELossFunction::Focal: {
                 result.emplace_back(new TGpuPointwiseMetric(metricDescription, approxDim));
                 break;
             }

@@ -15,6 +15,7 @@ namespace NCatboostCuda {
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorExpectileLossguide(GetTrainerFactoryKey(ELossFunction::Expectile, EGrowPolicy::Lossguide));
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorTweedieLossguide(GetTrainerFactoryKey(ELossFunction::Tweedie, EGrowPolicy::Lossguide));
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorHuberLossguide(GetTrainerFactoryKey(ELossFunction::Huber, EGrowPolicy::Lossguide));
+    TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorFocalLossguide(GetTrainerFactoryKey(ELossFunction::Focal, EGrowPolicy::Lossguide));
 
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorPoissonDepthwise(GetTrainerFactoryKey(ELossFunction::Poisson, EGrowPolicy::Depthwise));
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorMapeDepthwise(GetTrainerFactoryKey(ELossFunction::MAPE, EGrowPolicy::Depthwise));
@@ -27,6 +28,7 @@ namespace NCatboostCuda {
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorExpectileDepthwise(GetTrainerFactoryKey(ELossFunction::Expectile, EGrowPolicy::Depthwise));
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorTweedieDepthwise(GetTrainerFactoryKey(ELossFunction::Tweedie, EGrowPolicy::Depthwise));
     TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorHuberDepthwise(GetTrainerFactoryKey(ELossFunction::Huber, EGrowPolicy::Depthwise));
+    TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorFocalDepthwise(GetTrainerFactoryKey(ELossFunction::Focal, EGrowPolicy::Depthwise));
 
     //    TGpuTrainerFactory::TRegistrator<TPointwiseTrainer> RegistratorRmseOT(GetTrainerFactoryKey(ELossFunction::RMSE, EGrowPolicy::SymmetricTree));
 

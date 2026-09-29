@@ -285,6 +285,72 @@ def test_huber_with_fixed_delta(boosting_type, leaf_estimation_method):
     fit_catboost_gpu(params)
 
 
+FOCAL_LOSS = 'Focal:focal_alpha=0.25;focal_gamma=2'
+FOCAL_TRAINING_MODES = {
+    'ordered': {'--boosting-type': 'Ordered'},
+    'plain_feature_parallel': {'--boosting-type': 'Plain', '--data-partition': 'FeatureParallel'},
+    'plain_doc_parallel': {'--boosting-type': 'Plain', '--data-partition': 'DocParallel'},
+    'depthwise': {'--boosting-type': 'Plain', '--grow-policy': 'Depthwise'},
+    'lossguide': {'--boosting-type': 'Plain', '--grow-policy': 'Lossguide'},
+    'region': {'--boosting-type': 'Plain', '--grow-policy': 'Region'},
+}
+
+
+def fit_focal_model(name, loss_function, extra_params):
+    output_model_path = yatest.common.test_output_path(name + '.bin')
+    test_error_path = yatest.common.test_output_path(name + '_test_error.tsv')
+    params = {
+        '--use-best-model': 'false',
+        '--loss-function': loss_function,
+        '-f': data_file('adult', 'train_small'),
+        '-t': data_file('adult', 'test_small'),
+        '--column-description': data_file('adult', 'train.cd'),
+        '-i': '20',
+        '-w': '0.1',
+        '-T': '4',
+        '--random-seed': '0',
+        '-m': output_model_path,
+        '--test-err-log': test_error_path,
+    }
+    params.update(extra_params)
+    fit_catboost_gpu(params)
+    return output_model_path, test_error_path
+
+
+@pytest.mark.parametrize('training_mode', sorted(FOCAL_TRAINING_MODES.keys()))
+@pytest.mark.parametrize('leaf_estimation_method', LEAF_ESTIMATION_METHODS)
+def test_focal(training_mode, leaf_estimation_method):
+    extra_params = dict(FOCAL_TRAINING_MODES[training_mode])
+    extra_params['--leaf-estimation-method'] = leaf_estimation_method
+    model_path, test_error_path = fit_focal_model('model', FOCAL_LOSS, extra_params)
+
+    test_values = np.loadtxt(test_error_path, skiprows=1, usecols=1)
+    assert np.all(np.isfinite(test_values))
+    assert test_values[-1] < test_values[0]
+
+    eval_error_path = yatest.common.test_output_path('eval_error.tsv')
+    eval_metric(model_path, FOCAL_LOSS, data_file('adult', 'test_small'), data_file('adult', 'train.cd'), eval_error_path)
+    if training_mode == 'region':
+        # For region models the per-iteration values of eval-metrics do not follow the training
+        # iterations (Logloss behaves the same way), so only the final model is comparable.
+        calc_value = np.loadtxt(eval_error_path, skiprows=1, usecols=1)[-1]
+        assert abs(test_values[-1] - calc_value) <= 1e-6 * abs(calc_value)
+    else:
+        compare_metrics_with_diff(FOCAL_LOSS, test_error_path, eval_error_path, eps=1e-6)
+
+
+def test_focal_gamma_changes_ordered_model():
+    evals = []
+    for gamma in ['0.5', '3']:
+        name = 'gamma_' + gamma
+        model_path, _ = fit_focal_model(name, 'Focal:focal_alpha=0.25;focal_gamma=' + gamma, {'--boosting-type': 'Ordered'})
+        eval_path = yatest.common.test_output_path(name + '.eval')
+        apply_catboost(model_path, data_file('adult', 'test_small'), data_file('adult', 'train.cd'), eval_path)
+        evals.append(eval_path)
+
+    assert not filecmp.cmp(evals[0], evals[1], shallow=False)
+
+
 @pytest.mark.xfail(reason='Need fixing')
 @pytest.mark.parametrize('boosting_type', BOOSTING_TYPE)
 def test_rsm_with_pairwise(boosting_type):

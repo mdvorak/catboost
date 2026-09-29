@@ -56,6 +56,7 @@ target_sources(catboost-cuda-targets-ut PRIVATE
   ${PROJECT_SOURCE_DIR}/catboost/cuda/targets/ut/test_combination.cpp
   ${PROJECT_SOURCE_DIR}/catboost/cuda/targets/ut/test_tweedie.cpp
   ${PROJECT_SOURCE_DIR}/catboost/cuda/targets/ut/test_huber.cpp
+  ${PROJECT_SOURCE_DIR}/catboost/cuda/targets/ut/test_focal.cpp
 )
 
 

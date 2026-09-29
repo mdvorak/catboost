@@ -51,6 +51,7 @@ namespace NCatboostCuda {
                       slice)
             , Type(target.GetType())
             , Alpha(target.GetAlpha())
+            , Gamma(target.GetGamma())
             , Border(target.GetBorder())
             , MetricName(target.ScoreMetricName())
             , ObjectiveDescriptor(target.GetObjectiveDescriptor())
@@ -61,6 +62,7 @@ namespace NCatboostCuda {
             : TParent(target)
             , Type(target.GetType())
             , Alpha(target.GetAlpha())
+            , Gamma(target.GetGamma())
             , Border(target.GetBorder())
             , MetricName(target.ScoreMetricName())
             , ObjectiveDescriptor(target.GetObjectiveDescriptor())
@@ -74,6 +76,7 @@ namespace NCatboostCuda {
                       std::move(target))
             , Type(basedOn.GetType())
             , Alpha(basedOn.GetAlpha())
+            , Gamma(basedOn.GetGamma())
             , Border(basedOn.GetBorder())
             , MetricName(basedOn.ScoreMetricName())
             , ObjectiveDescriptor(basedOn.GetObjectiveDescriptor())
@@ -84,6 +87,7 @@ namespace NCatboostCuda {
             : TParent(std::move(other))
             , Type(other.GetType())
             , Alpha(other.GetAlpha())
+            , Gamma(other.GetGamma())
             , Border(other.GetBorder())
             , MetricName(other.ScoreMetricName())
             , ObjectiveDescriptor(other.GetObjectiveDescriptor())
@@ -97,10 +101,12 @@ namespace NCatboostCuda {
                                         const TMap<TString, TString>& params) const {
             auto tmp = TVec::Create(point.GetMapping().RepeatOnAllDevices(1));
 
+            const bool isFocal = Type == ELossFunction::Focal;
             Approximate(GetTarget().GetTargets(),
                         GetTarget().GetWeights(),
                         point,
-                        NCatboostOptions::GetAlpha(params),
+                        isFocal ? NCatboostOptions::GetFocalParamA(params) : NCatboostOptions::GetAlpha(params),
+                        isFocal ? NCatboostOptions::GetFocalParamG(params) : 0.0,
                         UseBorder(),
                         GetBorder(),
                         &tmp,
@@ -161,6 +167,7 @@ namespace NCatboostCuda {
                 weights,
                 point,
                 GetAlpha(),
+                GetGamma(),
                 UseBorder(),
                 GetBorder(),
                 value,
@@ -238,6 +245,10 @@ namespace NCatboostCuda {
             return Alpha;
         }
 
+        double GetGamma() const {
+            return Gamma;
+        }
+
         double GetBorder() const {
             return Border;
         }
@@ -294,6 +305,11 @@ namespace NCatboostCuda {
                     Alpha = NCatboostOptions::GetHuberParam(targetOptions);
                     break;
                 }
+                case ELossFunction::Focal: {
+                    Alpha = NCatboostOptions::GetFocalParamA(targetOptions);
+                    Gamma = NCatboostOptions::GetFocalParamG(targetOptions);
+                    break;
+                }
                 default: {
                     ythrow TCatBoostException() << "Unsupported loss function " << targetOptions.GetLossFunction();
                 }
@@ -309,6 +325,7 @@ namespace NCatboostCuda {
                          const TConstVec& weights,
                          const TConstVec& point,
                          double alpha,
+                         double gamma,
                          bool useBorder,
                          double border,
                          TVec* value,
@@ -343,6 +360,18 @@ namespace NCatboostCuda {
                                             stream);
                     break;
                 }
+                case ELossFunction::Focal: {
+                    ApproximateFocal(target,
+                                     weights,
+                                     point,
+                                     alpha,
+                                     gamma,
+                                     value,
+                                     der,
+                                     der2,
+                                     stream);
+                    break;
+                }
                 default: {
                     ApproximatePointwise(target,
                                          weights,
@@ -361,6 +390,7 @@ namespace NCatboostCuda {
     private:
         ELossFunction Type = ELossFunction::PythonUserDefinedPerObject;
         double Alpha = 0;
+        double Gamma = 0;
         double Border = 0;
         double VariancePower = 1.5;
         TString MetricName;

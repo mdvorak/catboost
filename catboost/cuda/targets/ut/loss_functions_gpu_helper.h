@@ -14,11 +14,14 @@
 #include <catboost/libs/metrics/sample.h>
 
 #include <library/cpp/testing/unittest/registar.h>
-#include <library/cpp/testing/unittest/registar.h>
 
+#include <util/generic/algorithm.h>
 #include <util/generic/array_ref.h>
 #include <util/generic/ymath.h>
 #include <util/system/info.h>
+
+#include <cmath>
+#include <functional>
 
 using TVec = TSingleBuffer<float>;
 using Derivatives = std::pair<TVector<float>, TVector<float>>;
@@ -48,23 +51,28 @@ inline void GenerateSamples(TRandom & random,
     }
 }
 
-inline CpuResult CalculateLossAndDerivativesOnCpu(TVector<float>& targets,
-                                                  TVector<TVector<float>>& cursor,
-                                                  TVector<float>& weights,
+// Fills score with the negated weighted loss sum, der with weighted first derivatives and der2 with
+// weighted second derivatives, using the GPU sign conventions.
+using TGpuLossApproximator = std::function<void(const TSingleBuffer<const float>& targets,
+                                                const TSingleBuffer<const float>& weights,
+                                                const TSingleBuffer<const float>& cursor,
+                                                TVec* score,
+                                                TVec* der,
+                                                TVec* der2)>;
+
+inline CpuResult CalculateLossAndDerivativesOnCpu(const TVector<float>& targets,
+                                                  const TVector<TVector<float>>& cursor,
+                                                  const TVector<float>& weights,
                                                   const ELossFunction& lossFunction,
                                                   const IDerCalcer& error,
-                                                  double param,
-                                                  TString paramName) {
+                                                  const TLossParams& params) {
 
     const auto metric = std::move(CreateSingleTargetMetric(lossFunction,
-                                                           TLossParams::FromVector({{paramName, ToString(param)}}),
+                                                           params,
                                                            /*approxDimension=*/1)[0]);
     NPar::TLocalExecutor executor;
 
-    TVector<TVector<double>> approxes(1, TVector<double>(cursor[0].size()));
-    for (ui32 index = 0; index < cursor[0].size(); ++index) {
-        approxes[0][index] = static_cast<double>(cursor[0][index]);
-    }
+    TVector<TVector<double>> approxes(1, TVector<double>(cursor[0].begin(), cursor[0].end()));
 
     TMetricHolder score = metric->Eval(approxes, targets, weights, {}, 0, targets.size(), executor);
 
@@ -84,52 +92,48 @@ inline CpuResult CalculateLossAndDerivativesOnCpu(TVector<float>& targets,
     return std::make_pair(metric->GetFinalError(score), std::move(derivatives));
 }
 
-inline std::pair<float, Derivatives> CalculateLossAndDerivativesOnGpu(TVector<float>& targets,
-                                                                      TVector<TVector<float>>& cursor,
-                                                                      TVector<float>& weights,
-                                                                      const ELossFunction& lossFunction,
-                                                                      double param) {
+inline GpuResult CalculateLossAndDerivativesOnGpu(const TVector<float>& targets,
+                                                  const TVector<TVector<float>>& cursor,
+                                                  const TVector<float>& weights,
+                                                  const TGpuLossApproximator& approximate) {
     auto docsMapping = NCudaLib::TSingleMapping(0, targets.size());
-    auto targetsGpu = [&]() {
+    auto upload = [&](const TVector<float>& values) {
         auto tmp = TVec::Create(docsMapping);
-        tmp.Write(targets);
+        tmp.Write(values);
         return tmp.ConstCopyView();
-    }();
-
-    auto weightsGpu = [&]() {
-        auto tmp = TVec::Create(docsMapping);
-        tmp.Write(weights);
-        return tmp.ConstCopyView();
-    }();
-
-    auto cursorGpu = [&]() {
-        auto tmp = TVec::Create(docsMapping);
-        tmp.Write(cursor[0]);
-        return tmp.ConstCopyView();
-    }();
+    };
+    auto targetsGpu = upload(targets);
+    auto weightsGpu = upload(weights);
+    auto cursorGpu = upload(cursor[0]);
 
     auto tmp = TVec::Create(cursorGpu.GetMapping().RepeatOnAllDevices(1));
     auto der = TVec::CopyMapping(cursorGpu);
     auto der2 = TVec::CopyMapping(cursorGpu);
-    ApproximatePointwise(targetsGpu,
-                         weightsGpu,
-                         cursorGpu,
-                         lossFunction,
-                         param,
-                         &tmp,
-                         &der,
-                         &der2);
+    approximate(targetsGpu, weightsGpu, cursorGpu, &tmp, &der, &der2);
 
-    //
     TVector<float> derVec;
     TVector<float> der2Vec;
     der.Read(derVec);
     der2.Read(der2Vec);
-    //
 
-    Derivatives derivatives = std::make_pair(derVec, der2Vec);
-    const float score = -ReadReduce(tmp)[0] / targets.size();
-    return std::make_pair(score, derivatives);
+    const double totalWeight = Accumulate(weights, 0.0);
+    const float score = -ReadReduce(tmp)[0] / totalWeight;
+    return std::make_pair(score, std::make_pair(derVec, der2Vec));
+}
+
+inline void CompareLossAndDerivatives(const CpuResult& cpuResult,
+                                      const GpuResult& gpuResult,
+                                      float precision = 1e-4f) {
+    UNIT_ASSERT(std::isfinite(gpuResult.first));
+    UNIT_ASSERT_DOUBLES_EQUAL(cpuResult.first, gpuResult.first, precision);
+    for (ui32 index = 0; index < cpuResult.second.size(); ++index) {
+        const float gpuDer = gpuResult.second.first[index];
+        const float gpuDer2 = gpuResult.second.second[index];
+        UNIT_ASSERT(std::isfinite(gpuDer));
+        UNIT_ASSERT(std::isfinite(gpuDer2));
+        UNIT_ASSERT_DOUBLES_EQUAL(cpuResult.second[index].Der1, gpuDer, precision);
+        UNIT_ASSERT_DOUBLES_EQUAL(cpuResult.second[index].Der2, -gpuDer2, precision); // 2nd der signs are opposite
+    }
 }
 
 inline void TestLossFunctionImpl(ui64 seed,
@@ -149,16 +153,11 @@ inline void TestLossFunctionImpl(ui64 seed,
 
         GenerateSamples(random, SIZE, targets, cursor, weights);
 
-        //
-        CpuResult cpuResult = CalculateLossAndDerivativesOnCpu(targets, cursor, weights, lossFunction, error, param, paramName);
-        GpuResult gpuResult = CalculateLossAndDerivativesOnGpu(targets, cursor, weights, lossFunction, param);
-        //
-
-        const float PRECISION = 1e-4f;
-        UNIT_ASSERT_DOUBLES_EQUAL(cpuResult.first, gpuResult.first, PRECISION);
-        for (ui32 index = 0; index < targets.size(); ++index) {
-            UNIT_ASSERT_DOUBLES_EQUAL(cpuResult.second[index].Der1, gpuResult.second.first[index], PRECISION);
-            UNIT_ASSERT_DOUBLES_EQUAL(cpuResult.second[index].Der2, -gpuResult.second.second[index], PRECISION); // 2nd der signs are opposite
-        }
+        const auto approximate = [&](const auto& targetsGpu, const auto& weightsGpu, const auto& cursorGpu, TVec* score, TVec* der, TVec* der2) {
+            ApproximatePointwise(targetsGpu, weightsGpu, cursorGpu, lossFunction, param, score, der, der2);
+        };
+        CompareLossAndDerivatives(
+            CalculateLossAndDerivativesOnCpu(targets, cursor, weights, lossFunction, error, TLossParams::FromVector({{paramName, ToString(param)}})),
+            CalculateLossAndDerivativesOnGpu(targets, cursor, weights, approximate));
     }
 }
