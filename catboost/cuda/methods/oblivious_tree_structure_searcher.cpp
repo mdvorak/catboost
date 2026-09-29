@@ -1,6 +1,7 @@
 #include "oblivious_tree_structure_searcher.h"
 #include "pointwise_scores_calcer.h"
 #include "random_score_helper.h"
+#include "rsm_helper.h"
 #include "tree_ctrs.h"
 #include "tree_ctr_datasets_visitor.h"
 #include "update_feature_weights.h"
@@ -113,6 +114,8 @@ namespace NCatboostCuda {
         featureWeights.Write(featureWeightsCpu);
         double scoreBeforeSplit = 0.0;
 
+        const auto featureSampler = CreateRsmFeatureSampler(FeaturesManager, TreeConfig.Rsm.Get(), DataSet);
+
         for (ui32 depth = 0; depth < TreeConfig.MaxDepth; ++depth) {
             //warning: don't change order of commands. current pipeline ensures maximum stream-parallelism until read
             //best score stage
@@ -148,6 +151,9 @@ namespace NCatboostCuda {
 
             UpdateFeatureWeightsForBestSplits(FeaturesManager, TreeConfig.ModelSizeReg, catFeatureWeights, maxUniqueValues);
 
+            bool hasSampledCandidates = !featureSampler || featureSampler->NextLevel(GetRandom());
+            const TMirrorBuffer<ui8>* featureMask = featureSampler ? featureSampler->GetFeatureMask() : nullptr;
+
             auto& manager = NCudaLib::GetCudaManager();
 
             manager.WaitComplete();
@@ -171,7 +177,8 @@ namespace NCatboostCuda {
                                                                  featureWeights.AsConstBuf(),
                                                                  scoreBeforeSplit,
                                                                  ScoreStdDev,
-                                                                 GetRandom().NextUniformL());
+                                                                 GetRandom().NextUniformL(),
+                                                                 featureMask);
                     }
                     if (simpleCtrScoreCalcer) {
                         simpleCtrScoreCalcer->ComputeOptimalSplit(partitionsStats.AsConstBuf(),
@@ -179,7 +186,8 @@ namespace NCatboostCuda {
                                                                   featureWeights.AsConstBuf(),
                                                                   scoreBeforeSplit,
                                                                   ScoreStdDev,
-                                                                  GetRandom().NextUniformL());
+                                                                  GetRandom().NextUniformL(),
+                                                                  featureMask);
                     }
                 }
             }
@@ -246,12 +254,20 @@ namespace NCatboostCuda {
                                                                    treeCtrDataSetScoreCalcer);
                     }
 
+                    // tree CTRs are not sampled, so they are split candidates at every level
+                    hasSampledCandidates = true;
+
                     if (ctrDataSetVisitor.HasSplit()) {
                         bestSplitProp = ctrDataSetVisitor.CreateBestSplitProperties();
                         treeCtrSplitBits = ctrDataSetVisitor.GetBestSplitBits();
                         isTreeCtrSplit = true;
                     }
                 }
+            }
+
+            if (!hasSampledCandidates) {
+                // as on CPU, a level without sampled split candidates ends the tree
+                break;
             }
 
             scoreBeforeSplit = bestSplitProp.Score;

@@ -108,6 +108,7 @@ target_sources(catboost-cuda-methods PRIVATE
   ${PROJECT_SOURCE_DIR}/catboost/cuda/methods/serialization_helper.cpp
   ${PROJECT_SOURCE_DIR}/catboost/cuda/methods/pointwise_optimization_subsets.cpp
   ${PROJECT_SOURCE_DIR}/catboost/cuda/methods/update_feature_weights.cpp
+  ${PROJECT_SOURCE_DIR}/catboost/cuda/methods/rsm_helper.cpp
   ${PROJECT_SOURCE_DIR}/catboost/cuda/methods/stripe_target_wrapper.cpp
   ${PROJECT_SOURCE_DIR}/catboost/cuda/methods/pairwise_oblivious_trees/pairwise_score_calcer_for_policy.cpp
   ${PROJECT_SOURCE_DIR}/catboost/cuda/methods/pairwise_oblivious_trees/pairwise_scores_calcer.cpp

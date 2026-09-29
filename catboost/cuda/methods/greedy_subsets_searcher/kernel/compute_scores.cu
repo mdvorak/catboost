@@ -56,6 +56,7 @@ namespace NKernel {
     __global__ void ComputeOptimalSplits(const TCBinFeature* bf,
                                          ui32 binFeatureCount,
                                          const float* binFeaturesWeights, ui32 binFeaturesWeightsCount,
+                                         const ui8* featureMask,
                                          const float* histograms,
                                          const double* partStats, int statCount,
                                          const ui32* partIds, int pCount,
@@ -79,6 +80,9 @@ namespace NKernel {
                 break;
             }
             if (bf[binFeatureId].SkipInScoreCount) {
+                continue;
+            }
+            if (featureMask && !__ldg(featureMask + bf[binFeatureId].FeatureId)) {
                 continue;
             }
             calcer.NextFeature(bf[binFeatureId]);
@@ -152,6 +156,7 @@ namespace NKernel {
 
     void ComputeOptimalSplits(const TCBinFeature* binaryFeatures, ui32 binaryFeatureCount,
                               const float* binFeaturesWeights, ui32 binFeaturesWeightsCount,
+                              const ui8* featureMask,
                               const float* histograms,
                               const double* partStats, int statCount,
                               const ui32* partIds, int partBlockSize, int partBlockCount,
@@ -175,7 +180,7 @@ namespace NKernel {
         }
 
         #define RUN() \
-        ComputeOptimalSplits<blockSize, TScoreCalcer> << < numBlocks, blockSize, 0, stream >> > (binaryFeatures, binaryFeatureCount, binFeaturesWeights, binFeaturesWeightsCount, histograms, partStats,  statCount, partIds, partBlockSize, restPartIds, restPartCount, multiclassOptimization, scoreCalcer, result);
+        ComputeOptimalSplits<blockSize, TScoreCalcer> << < numBlocks, blockSize, 0, stream >> > (binaryFeatures, binaryFeatureCount, binFeaturesWeights, binFeaturesWeightsCount, featureMask, histograms, partStats,  statCount, partIds, partBlockSize, restPartIds, restPartCount, multiclassOptimization, scoreCalcer, result);
 
 
         switch (scoreFunction)
@@ -304,6 +309,7 @@ namespace NKernel {
                                                ui32 binFeatureCount,
                                                const float* binFeaturesWeights,
                                                ui32 binFeaturesWeightsCount,
+                                               const ui8* featureMask,
                                                const float* histograms,
                                                const double* partStats, int statCount,
                                                const ui32* partIds,
@@ -328,6 +334,9 @@ namespace NKernel {
                 break;
             }
             if (bf[binFeatureId].SkipInScoreCount) {
+                continue;
+            }
+            if (featureMask && !__ldg(featureMask + bf[binFeatureId].FeatureId)) {
                 continue;
             }
             calcer.NextFeature(bf[binFeatureId]);
@@ -394,6 +403,7 @@ namespace NKernel {
                                         ui32 binFeatureCount,
                                         const float* binFeaturesWeights,
                                         ui32 binFeaturesWeightsCount,
+                                        const ui8* featureMask,
                                         const float* histograms,
                                         const double* partStats, int statCount,
                                         const int partId,
@@ -417,6 +427,9 @@ namespace NKernel {
                 break;
             }
             if (bf[binFeatureId].SkipInScoreCount) {
+                continue;
+            }
+            if (featureMask && !__ldg(featureMask + bf[binFeatureId].FeatureId)) {
                 continue;
             }
             calcer.NextFeature(bf[binFeatureId]);
@@ -479,6 +492,7 @@ namespace NKernel {
 
     void ComputeOptimalSplitsRegion(const TCBinFeature* binaryFeatures, ui32 binaryFeatureCount,
                                     const float* binFeaturesWeights, ui32 binFeaturesWeightsCount,
+                                    const ui8* featureMask,
                                     const float* histograms,
                                     const double* partStats, int statCount,
                                     const ui32* partIds, int partCount,
@@ -501,7 +515,7 @@ namespace NKernel {
         }
 
         #define RUN() \
-        ComputeOptimalSplitsRegion<blockSize, TScoreCalcer> << < numBlocks, blockSize, 0, stream >> > (binaryFeatures, binaryFeatureCount, binFeaturesWeights, binFeaturesWeightsCount, histograms, partStats,  statCount, partIds, multiclassOptimization, scoreCalcer, result);
+        ComputeOptimalSplitsRegion<blockSize, TScoreCalcer> << < numBlocks, blockSize, 0, stream >> > (binaryFeatures, binaryFeatureCount, binFeaturesWeights, binFeaturesWeightsCount, featureMask, histograms, partStats,  statCount, partIds, multiclassOptimization, scoreCalcer, result);
 
 
         switch (scoreFunction)
@@ -551,6 +565,7 @@ namespace NKernel {
 
     void ComputeOptimalSplit(const TCBinFeature* binaryFeatures, ui32 binaryFeatureCount,
                             const float* binFeaturesWeights, ui32 binFeaturesWeightsCount,
+                            const ui8* featureMask,
                             const float* histograms,
                             const double* partStats, int statCount,
                             ui32 partId, ui32 maybeSecondPartId,
@@ -573,7 +588,7 @@ namespace NKernel {
         }
 
         #define RUN() \
-        ComputeOptimalSplit<blockSize, TScoreCalcer> << < numBlocks, blockSize, 0, stream >> > (binaryFeatures, binaryFeatureCount, binFeaturesWeights, binFeaturesWeightsCount, histograms, partStats,  statCount, partId, maybeSecondPartId, multiclassOptimization, scoreCalcer, result);
+        ComputeOptimalSplit<blockSize, TScoreCalcer> << < numBlocks, blockSize, 0, stream >> > (binaryFeatures, binaryFeatureCount, binFeaturesWeights, binFeaturesWeightsCount, featureMask, histograms, partStats,  statCount, partId, maybeSecondPartId, multiclassOptimization, scoreCalcer, result);
 
 
         switch (scoreFunction)

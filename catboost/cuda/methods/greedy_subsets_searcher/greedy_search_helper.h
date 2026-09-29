@@ -3,6 +3,7 @@
 #include "split_properties_helper.h"
 #include "structure_searcher_options.h"
 #include "compute_by_blocks_helper.h"
+#include <catboost/cuda/methods/rsm_helper.h>
 #include <catboost/cuda/cuda_lib/cuda_base.h>
 #include <catboost/cuda/gpu_data/doc_parallel_dataset.h>
 #include <catboost/cuda/data/leaf_path.h>
@@ -21,6 +22,7 @@ namespace NCatboostCuda {
                                featuresManager,
                                GetComputeByBlocksHelper(dataSet, options, statCount))
             , Random(random)
+            , FeatureSampler(CreateRsmFeatureSampler(FeaturesManager, Options.Rsm, dataSet))
         {
         }
 
@@ -65,6 +67,7 @@ namespace NCatboostCuda {
         TSplitPropertiesHelper SplitPropsHelper;
         TGpuAwareRandom& Random;
         double ScoreStdDev = 0;
+        THolder<TRsmFeatureSampler> FeatureSampler;
     };
 
 }

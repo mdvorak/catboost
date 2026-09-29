@@ -83,10 +83,11 @@ namespace NCatboostCuda {
                                                               const TMirrorBuffer<const float>& featureWeights,
                                                               double scoreBeforeSplit,
                                                               double scoreStdDev = 0,
-                                                              ui64 seed = 0) {
+                                                              ui64 seed = 0,
+                                                              const TCudaBuffer<ui8, TFeatureWeightsMapping>* featureMask = nullptr) {
             TRandom rand(seed);
             for (auto& helper : ScoreHelpers) {
-                helper.second->ComputeOptimalSplit(partStats, catFeatureWeights, featureWeights, scoreBeforeSplit, scoreStdDev, rand.NextUniformL());
+                helper.second->ComputeOptimalSplit(partStats, catFeatureWeights, featureWeights, scoreBeforeSplit, scoreStdDev, rand.NextUniformL(), featureMask);
             }
             return *this;
         }

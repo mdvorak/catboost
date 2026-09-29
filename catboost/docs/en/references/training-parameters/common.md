@@ -764,6 +764,8 @@ Random subspace method. The percentage of features to use at each split selectio
 
 The value must be in the range (0;1].
 
+On GPU, features of an exclusive features bundle are selected or dropped together, and CTRs of feature combinations are not sampled. For pairwise loss functions on GPU, features are selected once per tree and in groups, and binary features are not sampled.
+
 **Type**
 
 {{ python-type--float }} (0;1]
@@ -774,7 +776,7 @@ None (set to 1)
 
 **Supported processing units**
 
-{{ calcer_type__cpu }}; {{ calcer_type__gpu }} for pairwise ranking
+{{ cpu-gpu }}
 
 
 ## nan_mode {#nan_mode}

@@ -22,5 +22,6 @@ namespace NCatboostCuda {
 
         double MinLeafSize = 1;
         double RandomStrength = 0;
+        double Rsm = 1.0;
     };
 }
