@@ -5,6 +5,7 @@
 
 #include "https.h"
 
+#include <library/cpp/streams/zstd/zstd.h>
 #include <library/cpp/testing/unittest/registar.h>
 #include <library/cpp/testing/unittest/tests_data.h>
 
@@ -257,6 +258,41 @@ Y_UNIT_TEST_SUITE(NehHttp) {
         UNIT_ASSERT_EQUAL(resp->GetErrorCode(), 523);
     }
 
+    Y_UNIT_TEST(TDecodesZstdAndGzipResponses) {
+        const TString body = TString(4096, 'x') + TString("promo\0protobuf"sv);
+        TStringStream compressed;
+        TZstdCompress compressor(&compressed, 1);
+        compressor.Write(body);
+        compressor.Finish();
+
+        TServ serv = CreateServices([&](const IRequestRef& req) {
+            auto* httpReq = dynamic_cast<IHttpRequest*>(req.Get());
+            const auto* acceptEncoding = httpReq->Headers().FindHeader("Accept-Encoding");
+            Y_ENSURE(acceptEncoding);
+            TDataSaver data;
+            TString headers = "\r\nContent-Type: application/protobuf";
+            if (acceptEncoding->Value() == "zstd") {
+                data << compressed.Str();
+                headers += "\r\nContent-Encoding: zstd";
+            } else {
+                // The test server applies gzip based on Accept-Encoding.
+                data << body;
+            }
+            httpReq->SendReply(data, headers);
+        });
+
+        for (const auto& encoding : {"zstd", "gzip"}) {
+            TMessage msg;
+            msg.Addr = TStringBuilder() << "http2://localhost:" << serv.ServerPort << "/pipeline";
+            const TString headers = TStringBuilder() << "Accept-Encoding: " << encoding << "\r\n";
+            UNIT_ASSERT(NNeh::NHttp::MakeFullRequest(msg, headers, ""));
+            auto response = NNeh::Request(msg)->Wait(TDuration::Seconds(3));
+            UNIT_ASSERT_C(response, "compressed response timed out");
+            UNIT_ASSERT_C(!response->IsError(), response->GetErrorText());
+            UNIT_ASSERT_VALUES_EQUAL(response->Data, body);
+        }
+    }
+
     Y_UNIT_TEST(TPipelineRequests) {
         TServ serv = CreateServices();
 
@@ -385,6 +421,35 @@ Y_UNIT_TEST_SUITE(NehHttp) {
         UNIT_ASSERT_C(selret == 1, "select should return one fd that is ready to return 0 on recv call");
         const ssize_t nReadBytes = recv(s, buf.Data(), buf.Size(), 0);
         UNIT_ASSERT_C(nReadBytes == 0, "connection must be closed, but we did not get 0 as return value from it.");
+    }
+
+    /**
+        @brief  Tests that a reply after DisableCompression() goes out as is to a client that accepts gzip.
+     */
+    Y_UNIT_TEST(TDisableCompression) {
+        const TString body(500, 'a'); // gzip shrinks it
+        TServ serv = CreateServices([&body](const IRequestRef& req) {
+            auto* httpReq = dynamic_cast<IHttpRequest*>(req.Get());
+            if (req->Data() == TStringBuf("plain")) {
+                httpReq->DisableCompression();
+            }
+            TData data(body.begin(), body.end());
+            httpReq->SendReply(data);
+        });
+
+        // HTTP/1.0: the server closes the connection after the reply, so the reply is all there is to read
+        auto get = [&serv](TStringBuf cgi) {
+            TSocket s(TNetworkAddress("localhost", serv.ServerPort), TDuration::Seconds(10));
+            s.SetSocketTimeout(10); // use as watchdog
+            TSocketOutput out(s);
+            out << "GET /pipeline?" << cgi << " HTTP/1.0\r\nAccept-Encoding: gzip\r\n\r\n";
+            out.Flush();
+            TSocketInput in(s);
+            return in.ReadAll();
+        };
+
+        UNIT_ASSERT_VALUES_EQUAL(get("plain"), "HTTP/1.0 200 Ok\r\nContent-Length: 500\r\nConnection: close\r\n\r\n" + body);
+        UNIT_ASSERT_STRING_CONTAINS(get("default"), "\r\nContent-Encoding: gzip\r\n");
     }
 
     Y_UNIT_TEST(TInputOutputDeadline) {
